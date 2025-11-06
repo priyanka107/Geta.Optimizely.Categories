@@ -32,16 +32,10 @@ namespace Geta.Optimizely.Categories.Extensions
             var routeSegment = "categories";
             return contentRepository.GetOrCreateCategoriesRoot(SiteDefinition.Current.SiteAssetsRoot, name, routeSegment);
         }
-
+        //Added for categories fix
         private static ContentReference GetOrCreateCategoriesRoot(this IContentRepository contentRepository, ContentReference parentLink, string name, string routeSegment)
         {
-            var loaderOptions = new LoaderOptions
-            {
-                LanguageLoaderOption.FallbackWithMaster()
-            };
-
-            var rootCategory = contentRepository.GetChildren<CategoryRoot>(parentLink, loaderOptions).FirstOrDefault();
-
+            var rootCategory = contentRepository.GetCategoryRoots(parentLink).FirstOrDefaultActiveCategoryRoot();
             if (rootCategory != null)
             {
                 return rootCategory.ContentLink;
@@ -53,37 +47,55 @@ namespace Geta.Optimizely.Categories.Extensions
             return contentRepository.Save(rootCategory, SaveAction.Publish, AccessLevel.NoAccess);
         }
         //Added for categories fix
+
+        /// <remarks>Load the existing Category Roots.</remarks>
         public static IEnumerable<CategoryRoot> GetCategoryRoots(this IContentRepository contentRepository, ContentReference parentLink)
         {
-            //IL_0000: Unknown result type (might be due to invalid IL or missing references)
-            //IL_0005: Unknown result type (might be due to invalid IL or missing references)
-            //IL_0011: Expected O, but got Unknown
-            //IL_0013: Expected O, but got Unknown
-            var val = new LoaderOptions();
-            ((OptionsBase<LoaderOptions, LoaderOption>)val).Add<LanguageLoaderOption>(LanguageLoaderOption.FallbackWithMaster((CultureInfo)null));
-            var val2 = val;
-            if (CategorySettings.Service.UseAlternativeCategoryRootLogic)
+            IEnumerable<CategoryRoot> categoryRoots;
+            var loaderOptions = new LoaderOptions
             {
-                var descendents = ((IContentLoader)contentRepository).GetDescendents(parentLink);
-                return ((IContentLoader)contentRepository).GetItems(descendents, val2).OfType<CategoryRoot>();
+                LanguageLoaderOption.FallbackWithMaster()
+            };
+
+            var useAlternativeLogic = CategorySettings.Service.UseAlternativeCategoryRootLogic;
+            if (useAlternativeLogic)
+            {
+                // GetDescendents returns all children (direct and non-direct) of the specified parent
+                var descendents = contentRepository.GetDescendents(parentLink);
+                categoryRoots = contentRepository.GetItems(descendents, loaderOptions).OfType<CategoryRoot>();
             }
-            return ((IContentLoader)contentRepository).GetChildren<CategoryRoot>(parentLink, val2);
+            else
+            {
+                // GetChildren returns the direct children of the specified parent
+                categoryRoots = contentRepository.GetChildren<CategoryRoot>(parentLink, loaderOptions);
+            }
+
+            return categoryRoots;
         }
         //Added for categories fix
+        /// <remarks>Find the first active Category Root or fallback to the first Category Root (if any).</remarks>
         public static CategoryRoot FirstOrDefaultActiveCategoryRoot(this IEnumerable<CategoryRoot> categories)
         {
-            CategoryRoot categoryRoot = null;
-            CategoryRoot categoryRoot2 = null;
-            foreach (var category in categories)
+            var firstActive = (CategoryRoot)null;
+            var first = (CategoryRoot)null;
+
+            foreach (var categoryRoot in categories)
             {
-                categoryRoot2 ??= category;
-                if (category.IsActive)
+                if (first == null)
                 {
-                    categoryRoot = category;
-                    break;
+                    first = categoryRoot;
                 }
+
+                if (!categoryRoot.IsActive)
+                {
+                    continue;
+                }
+
+                firstActive = categoryRoot;
+                break;
             }
-            return categoryRoot ?? categoryRoot2;
+
+            return firstActive ?? first;
         }
     }
 }
